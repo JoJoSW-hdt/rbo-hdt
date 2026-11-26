@@ -86,7 +86,7 @@ class Game extends Phaser.Scene {
   addTouchControls(w: number, h: number) {
     const y = h - 78;
     const button = (x: number, label: string, action: () => void, release?: () => void) => {
-      const circle = this.add.circle(x, y, 25, 0x54749b, 0.92)
+      const circle = this.add.circle(x, y, 21, 0x54749b, 0.92)
         .setStrokeStyle(2, 0xd9e8ff).setScrollFactor(0).setDepth(30).setInteractive();
       this.add.text(x, y, label, { fontSize: "18px", color: "#ffffff" })
         .setOrigin(0.5).setScrollFactor(0).setDepth(31);
@@ -94,13 +94,13 @@ class Game extends Phaser.Scene {
       circle.on("pointerup", () => release?.());
       circle.on("pointerout", () => release?.());
     };
-    button(32, "◀", () => { this.touchDirection = -1; }, () => { this.touchDirection = 0; });
-    button(91, "▶", () => { this.touchDirection = 1; }, () => { this.touchDirection = 0; });
-    button(w - 220, "▲", () => this.jump());
-    button(w - 165, "↗", () => this.dodge());
-    button(w - 110, "A", () => this.hit(16, 112));
-    button(w - 55, "F", () => this.hit(27, 126));
-    button(w - 28, "E", () => this.special());
+    button(29, "◀", () => { this.touchDirection = -1; }, () => { this.touchDirection = 0; });
+    button(78, "▶", () => { this.touchDirection = 1; }, () => { this.touchDirection = 0; });
+    button(w - 218, "▲", () => this.jump());
+    button(w - 170, "↗", () => this.dodge());
+    button(w - 122, "A", () => this.hit(16, 112));
+    button(w - 74, "F", () => this.hit(27, 126));
+    button(w - 26, "E", () => this.special());
   }
 
   jump() {
