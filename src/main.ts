@@ -63,7 +63,7 @@ class Game extends Phaser.Scene {
     this.physics.add.collider(this.player, this.enemy);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
 
     this.hud = this.add.text(14, 12, "", {
       fontFamily: "Arial", fontSize: "14px", color: "#ffffff",
@@ -96,11 +96,11 @@ class Game extends Phaser.Scene {
     };
     button(32, "◀", () => { this.touchDirection = -1; }, () => { this.touchDirection = 0; });
     button(91, "▶", () => { this.touchDirection = 1; }, () => { this.touchDirection = 0; });
-    button(w - 202, "▲", () => this.jump());
-    button(w - 145, "↗", () => this.dodge());
-    button(w - 88, "A", () => this.hit(16, 112));
-    button(w - 31, "F", () => this.hit(27, 126));
-    // Habilidade especial acionada pelo botão E no teclado; toque longo no F não é necessário.
+    button(w - 220, "▲", () => this.jump());
+    button(w - 165, "↗", () => this.dodge());
+    button(w - 110, "A", () => this.hit(16, 112));
+    button(w - 55, "F", () => this.hit(27, 126));
+    button(w - 28, "E", () => this.special());
   }
 
   jump() {
