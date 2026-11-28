@@ -24,7 +24,8 @@ class Game extends Phaser.Scene {
   ended = false;
   facing = 1;
   heroMode = "";
-  enemyMode = "";\n  activeTouchId: number | null = null;
+  enemyMode = "";
+  activeTouchId: number | null = null;
 
   constructor() { super("game"); }
 
