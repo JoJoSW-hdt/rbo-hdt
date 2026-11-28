@@ -33,15 +33,23 @@ class Game extends Phaser.Scene {
     const w = this.scale.width, h = this.scale.height;
     const floorY = h - 8;
 
+    // Textura mínima usada apenas pelos corpos físicos invisíveis.
+    // Phaser não possui uma textura "__DEFAULT" garantida.
+    const physicsTexture = this.make.graphics({ x: 0, y: 0 });
+    physicsTexture.fillStyle(0xffffff, 1);
+    physicsTexture.fillRect(0, 0, 2, 2);
+    physicsTexture.generateTexture("rbo-physics-body", 2, 2);
+    physicsTexture.destroy();
+
     this.add.rectangle(w / 2, h / 2, w, h, 0x17243b);
     this.add.rectangle(w / 2, h - 65, w, 130, 0x34445a);
     for (let i = 0; i < 16; i++) this.add.rectangle(i * 110, h - 130, 2, 130, 0x52647a);
     const floor = this.add.rectangle(w / 2, floorY, w, 16, 0x34445a);
     this.physics.add.existing(floor, true);
 
-    this.player = this.physics.add.sprite(110, h - 105, "__DEFAULT")
+    this.player = this.physics.add.sprite(110, h - 105, "rbo-physics-body")
       .setCollideWorldBounds(true).setVisible(false);
-    this.enemy = this.physics.add.sprite(Math.max(w - 100, 230), h - 105, "__DEFAULT")
+    this.enemy = this.physics.add.sprite(Math.max(w - 100, 230), h - 105, "rbo-physics-body")
       .setCollideWorldBounds(true).setImmovable(true).setVisible(false);
     // Corpos invisíveis cuidam da física; as imagens animadas vêm dos sprites originais de RO.
     this.player.setSize(34, 48).setOffset(4, 10);
