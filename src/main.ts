@@ -97,6 +97,13 @@ class Game extends Phaser.Scene {
     if (img) img.src = poringSprite(action);
   }
 
+  flashArt(art: Phaser.GameObjects.DOMElement) {
+    const img = this.imageOf(art);
+    if (!img) return;
+    img.style.filter = "brightness(2.2) saturate(1.4)";
+    this.time.delayedCall(140, () => { img.style.filter = ""; });
+  }
+
   addTouchControls(w: number, h: number) {
     const y = h - 78;
     const button = (x: number, label: string, action: () => void, release?: () => void) => {
@@ -144,9 +151,9 @@ class Game extends Phaser.Scene {
     const inFront = (this.enemy.x - this.player.x) * this.facing > -18;
     if (distance < range && inFront) {
       this.enemyHp = Math.max(0, this.enemyHp - damage);
-      this.enemyArt.setTint(0xffffff);
+      this.flashArt(this.enemyArt);
       this.enemy.setVelocityX(this.facing * 100);
-      this.time.delayedCall(110, () => this.enemyArt.clearTint());
+      
       this.refreshHud();
       if (this.enemyHp === 0) this.finish(true);
     }
@@ -159,12 +166,12 @@ class Game extends Phaser.Scene {
   special() {
     if (!this.skillReady || this.ended || this.enemyHp <= 0) return;
     this.skillReady = false;
-    this.heroArt.setTint(0x9eeeff);
-    this.time.delayedCall(180, () => this.heroArt.clearTint());
+    this.flashArt(this.heroArt);
+    
     if (Math.abs(this.player.x - this.enemy.x) < 190) {
       this.enemyHp = Math.max(0, this.enemyHp - 38);
-      this.enemyArt.setTint(0x9eeeff);
-      this.time.delayedCall(180, () => this.enemyArt.clearTint());
+      this.flashArt(this.enemyArt);
+      
       this.refreshHud();
       if (this.enemyHp === 0) this.finish(true);
     }
@@ -189,8 +196,8 @@ class Game extends Phaser.Scene {
       this.setEnemyMode("idle");
       if (!this.ended && Math.abs(this.player.x - this.enemy.x) < 82 && !this.invulnerable) {
         this.hp = Math.max(0, this.hp - 12);
-        this.heroArt.setTint(0xff7777);
-        this.time.delayedCall(150, () => this.heroArt.clearTint());
+        this.flashArt(this.heroArt);
+        
         this.refreshHud();
         if (this.hp === 0) this.finish(false);
       }
