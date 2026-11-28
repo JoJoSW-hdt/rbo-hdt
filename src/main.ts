@@ -26,6 +26,9 @@ class Game extends Phaser.Scene {
   heroMode = "";
   enemyMode = "";
   activeTouchId: number | null = null;
+  pressedKeys = new Set<string>();
+  onKeyDown = (event: KeyboardEvent) => { this.pressedKeys.add(event.key.toLowerCase()); };
+  onKeyUp = (event: KeyboardEvent) => { this.pressedKeys.delete(event.key.toLowerCase()); };
 
   constructor() { super("game"); }
 
@@ -73,6 +76,11 @@ class Game extends Phaser.Scene {
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
+    // Captura direta do teclado: o preview embutido pode não focar o canvas.
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", () => this.pressedKeys.clear());
+    this.game.canvas.setAttribute("tabindex", "0");
 
     this.hud = this.add.text(14, 12, "", {
       fontFamily: "Arial", fontSize: "14px", color: "#ffffff",
@@ -269,13 +277,13 @@ class Game extends Phaser.Scene {
   update() {
     this.heroArt.setPosition(this.player.x, this.player.y);
     this.enemyArt.setPosition(this.enemy.x, this.enemy.y);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.R)) {
+    if (this.pressedKeys.has("r") || Phaser.Input.Keyboard.JustDown(this.keys.R)) {
       this.scene.restart();
       return;
     }
     if (this.ended || this.dodging) return;
-    const left = this.cursors.left.isDown || this.keys.A.isDown || this.touchDirection === -1;
-    const right = this.cursors.right.isDown || this.keys.D.isDown || this.touchDirection === 1;
+    const left = this.pressedKeys.has("arrowleft") || this.pressedKeys.has("a") || this.cursors.left.isDown || this.keys.A.isDown || this.touchDirection === -1;
+    const right = this.pressedKeys.has("arrowright") || this.pressedKeys.has("d") || this.cursors.right.isDown || this.keys.D.isDown || this.touchDirection === 1;
     if (left) {
       this.player.setVelocityX(-220);
       this.facing = -1;
@@ -292,13 +300,13 @@ class Game extends Phaser.Scene {
       this.player.setVelocityX(0);
       if (!this.attackLocked) this.setHeroMode("idle");
     }
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.up!) ||
+    if (this.pressedKeys.has("arrowup") || this.pressedKeys.has("w") || this.pressedKeys.has(" ") || Phaser.Input.Keyboard.JustDown(this.cursors.up!) ||
         Phaser.Input.Keyboard.JustDown(this.keys.W) ||
         Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.jump();
-    if (Phaser.Input.Keyboard.JustDown(this.keys.J)) this.hit(16, 112);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.K)) this.hit(27, 126);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.L)) this.dodge();
-    if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.special();
+    if (this.pressedKeys.has("j") || Phaser.Input.Keyboard.JustDown(this.keys.J)) this.hit(16, 112);
+    if (this.pressedKeys.has("k") || Phaser.Input.Keyboard.JustDown(this.keys.K)) this.hit(27, 126);
+    if (this.pressedKeys.has("l") || Phaser.Input.Keyboard.JustDown(this.keys.L)) this.dodge();
+    if (this.pressedKeys.has("e") || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.special();
   }
 }
 
