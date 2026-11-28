@@ -64,10 +64,12 @@ class Game extends Phaser.Scene {
       `<img src="${playerSprite(6)}" style="width:160px;height:160px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
     ).setSize(160, 160).setOrigin(0.5, 0.77).setDepth(8);
     this.heroArt.node.style.pointerEvents = "none";
+    if (this.heroArt.node.parentElement) this.heroArt.node.parentElement.style.pointerEvents = "none";
     this.enemyArt = this.add.dom(Math.max(w - 100, 230), h - 105).createFromHTML(
       `<img src="${poringSprite(6)}" style="width:128px;height:128px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
     ).setSize(128, 128).setOrigin(0.5, 0.77).setDepth(8);
     this.enemyArt.node.style.pointerEvents = "none";
+    if (this.enemyArt.node.parentElement) this.enemyArt.node.parentElement.style.pointerEvents = "none";
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
@@ -87,7 +89,6 @@ class Game extends Phaser.Scene {
     this.addTouchControls(w, h);
     this.input.addPointer(2);
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      if (!p.wasTouch) return;
       this.activeTouchId = p.id;
       this.handleTouch(p.x, p.y, w, h);
     });
