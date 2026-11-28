@@ -1,9 +1,15 @@
 import Phaser from "phaser";
 import "./style.css";
 
+const RO = "https://assets.latam-tools.com.br/image";
+const playerSprite = (action: number) => `${RO}?job=0&action=${action}&canvas=160x160+80+150`;
+const poringSprite = (action: number) => `${RO}?job=1002&action=${action}&canvas=128x128+64+120`;
+
 class Game extends Phaser.Scene {
   player!: Phaser.Physics.Arcade.Sprite;
   enemy!: Phaser.Physics.Arcade.Sprite;
+  heroArt!: Phaser.GameObjects.DOMElement;
+  enemyArt!: Phaser.GameObjects.DOMElement;
   keys!: Record<string, Phaser.Input.Keyboard.Key>;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   hud!: Phaser.GameObjects.Text;
@@ -15,52 +21,42 @@ class Game extends Phaser.Scene {
   attackLocked = false;
   dodging = false;
   invulnerable = false;
-  enemyPreparing = false;
-  skillReady = true;
   ended = false;
   facing = 1;
+  heroMode = "";
+  enemyMode = "";
 
   constructor() { super("game"); }
 
   create() {
-    const w = this.scale.width;
-    const h = this.scale.height;
-
-    const art = this.make.graphics({ x: 0, y: 0 });
-    art.fillStyle(0x55c8ff);
-    art.fillRoundedRect(0, 0, 42, 62, 8);
-    art.fillStyle(0xffffff);
-    art.fillCircle(30, 15, 4);
-    art.fillStyle(0x17466d);
-    art.fillRect(8, 43, 27, 16);
-    art.generateTexture("hero", 42, 62);
-    art.clear();
-    art.fillStyle(0xe56a58);
-    art.fillRoundedRect(0, 0, 48, 58, 8);
-    art.fillStyle(0xffffff);
-    art.fillCircle(12, 14, 4);
-    art.fillStyle(0x713c42);
-    art.fillRect(8, 41, 32, 14);
-    art.generateTexture("enemy", 48, 58);
-    art.destroy();
+    const w = this.scale.width, h = this.scale.height;
+    const floorY = h - 8;
 
     this.add.rectangle(w / 2, h / 2, w, h, 0x17243b);
     this.add.rectangle(w / 2, h - 65, w, 130, 0x34445a);
-    for (let i = 0; i < 16; i++) {
-      this.add.rectangle(i * 110, h - 130, 2, 130, 0x52647a);
-    }
-    const floor = this.add.rectangle(w / 2, h - 8, w, 16, 0x34445a);
+    for (let i = 0; i < 16; i++) this.add.rectangle(i * 110, h - 130, 2, 130, 0x52647a);
+    const floor = this.add.rectangle(w / 2, floorY, w, 16, 0x34445a);
     this.physics.add.existing(floor, true);
 
-    this.player = this.physics.add.sprite(110, h - 105, "hero")
-      .setCollideWorldBounds(true);
-    this.enemy = this.physics.add.sprite(Math.max(w - 100, 230), h - 105, "enemy")
-      .setCollideWorldBounds(true);
+    this.player = this.physics.add.sprite(110, h - 105, "__DEFAULT")
+      .setCollideWorldBounds(true).setVisible(false);
+    this.enemy = this.physics.add.sprite(Math.max(w - 100, 230), h - 105, "__DEFAULT")
+      .setCollideWorldBounds(true).setImmovable(true).setVisible(false);
+    // Corpos invisíveis cuidam da física; as imagens animadas vêm dos sprites originais de RO.
+    this.player.setSize(34, 48).setOffset(4, 10);
+    this.enemy.setSize(40, 46).setOffset(4, 8);
     this.player.setGravityY(1000).setMaxVelocity(300, 700);
-    this.enemy.setGravityY(1000).setMaxVelocity(100, 700).setImmovable(true);
+    this.enemy.setGravityY(1000).setMaxVelocity(100, 700);
     this.physics.add.collider(this.player, floor);
     this.physics.add.collider(this.enemy, floor);
     this.physics.add.collider(this.player, this.enemy);
+
+    this.heroArt = this.add.dom(110, h - 105).createFromHTML(
+      `<img src="${playerSprite(6)}" style="width:160px;height:160px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
+    ).setSize(160, 160).setOrigin(0.5, 0.77).setDepth(8);
+    this.enemyArt = this.add.dom(Math.max(w - 100, 230), h - 105).createFromHTML(
+      `<img src="${poringSprite(6)}" style="width:128px;height:128px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
+    ).setSize(128, 128).setOrigin(0.5, 0.77).setDepth(8);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
@@ -69,7 +65,6 @@ class Game extends Phaser.Scene {
       fontFamily: "Arial", fontSize: "14px", color: "#ffffff",
       backgroundColor: "#101a2c", padding: { x: 8, y: 6 }
     }).setScrollFactor(0).setDepth(20);
-
     this.playerBar = this.add.graphics().setScrollFactor(0).setDepth(20);
     this.enemyBar = this.add.graphics().setScrollFactor(0).setDepth(20);
     this.refreshHud();
@@ -78,9 +73,28 @@ class Game extends Phaser.Scene {
       "A/D mover • W/ESPAÇO pular • J/K atacar • L esquivar • E habilidade",
       { fontSize: "10px", color: "#d8e5ff" }
     ).setOrigin(0, 1).setScrollFactor(0).setDepth(20);
-
     this.addTouchControls(w, h);
     this.time.delayedCall(900, () => this.enemyThink());
+  }
+
+  imageOf(art: Phaser.GameObjects.DOMElement): HTMLImageElement | null {
+    return art.node.querySelector("img");
+  }
+
+  setHeroMode(mode: "idle" | "walk" | "attack") {
+    if (this.heroMode === mode) return;
+    this.heroMode = mode;
+    const action = mode === "walk" ? 14 : mode === "attack" ? 46 : 6;
+    const img = this.imageOf(this.heroArt);
+    if (img) img.src = playerSprite(action);
+  }
+
+  setEnemyMode(mode: "idle" | "walk" | "attack") {
+    if (this.enemyMode === mode) return;
+    this.enemyMode = mode;
+    const action = mode === "walk" ? 14 : mode === "attack" ? 22 : 6;
+    const img = this.imageOf(this.enemyArt);
+    if (img) img.src = poringSprite(action);
   }
 
   addTouchControls(w: number, h: number) {
@@ -113,11 +127,11 @@ class Game extends Phaser.Scene {
     this.dodging = true;
     this.invulnerable = true;
     this.player.setVelocityX(this.facing * 390);
-    this.player.setAlpha(0.45);
+    this.heroArt.setAlpha(0.45);
     this.time.delayedCall(260, () => {
       this.dodging = false;
       this.player.setVelocityX(0);
-      this.player.setAlpha(1);
+      this.heroArt.setAlpha(1);
     });
     this.time.delayedCall(520, () => { this.invulnerable = false; });
   }
@@ -125,28 +139,32 @@ class Game extends Phaser.Scene {
   hit(damage: number, range: number) {
     if (this.attackLocked || this.ended || this.enemyHp <= 0) return;
     this.attackLocked = true;
+    this.setHeroMode("attack");
     const distance = Math.abs(this.player.x - this.enemy.x);
     const inFront = (this.enemy.x - this.player.x) * this.facing > -18;
     if (distance < range && inFront) {
       this.enemyHp = Math.max(0, this.enemyHp - damage);
-      this.enemy.setTint(0xffffff);
+      this.enemyArt.setTint(0xffffff);
       this.enemy.setVelocityX(this.facing * 100);
-      this.time.delayedCall(110, () => this.enemy.clearTint());
+      this.time.delayedCall(110, () => this.enemyArt.clearTint());
       this.refreshHud();
       if (this.enemyHp === 0) this.finish(true);
     }
-    this.time.delayedCall(300, () => { this.attackLocked = false; });
+    this.time.delayedCall(420, () => {
+      this.attackLocked = false;
+      if (!this.ended) this.setHeroMode("idle");
+    });
   }
 
   special() {
     if (!this.skillReady || this.ended || this.enemyHp <= 0) return;
     this.skillReady = false;
-    this.player.setTint(0x9eeeff);
-    this.time.delayedCall(180, () => this.player.clearTint());
+    this.heroArt.setTint(0x9eeeff);
+    this.time.delayedCall(180, () => this.heroArt.clearTint());
     if (Math.abs(this.player.x - this.enemy.x) < 190) {
       this.enemyHp = Math.max(0, this.enemyHp - 38);
-      this.enemy.setTint(0x9eeeff);
-      this.time.delayedCall(180, () => this.enemy.clearTint());
+      this.enemyArt.setTint(0x9eeeff);
+      this.time.delayedCall(180, () => this.enemyArt.clearTint());
       this.refreshHud();
       if (this.enemyHp === 0) this.finish(true);
     }
@@ -154,24 +172,25 @@ class Game extends Phaser.Scene {
     this.refreshHud();
   }
 
+  skillReady = true;
+
   enemyThink() {
     if (this.ended || this.enemyHp <= 0) return;
     const distance = Math.abs(this.player.x - this.enemy.x);
     if (distance > 62) {
       this.enemy.setVelocityX(this.player.x < this.enemy.x ? -62 : 62);
+      this.setEnemyMode("walk");
       this.time.delayedCall(180, () => this.enemyThink());
       return;
     }
     this.enemy.setVelocityX(0);
-    this.enemyPreparing = true;
-    this.enemy.setTint(0xffb36b);
+    this.setEnemyMode("attack");
     this.time.delayedCall(520, () => {
-      this.enemyPreparing = false;
-      this.enemy.clearTint();
+      this.setEnemyMode("idle");
       if (!this.ended && Math.abs(this.player.x - this.enemy.x) < 82 && !this.invulnerable) {
         this.hp = Math.max(0, this.hp - 12);
-        this.player.setTint(0xff7777);
-        this.time.delayedCall(150, () => this.player.clearTint());
+        this.heroArt.setTint(0xff7777);
+        this.time.delayedCall(150, () => this.heroArt.clearTint());
         this.refreshHud();
         if (this.hp === 0) this.finish(false);
       }
@@ -181,7 +200,7 @@ class Game extends Phaser.Scene {
 
   refreshHud() {
     this.hud.setText(
-      `RBO 2.0  |  NOVIÇO   HP ${this.hp}/100   |   PORING ${this.enemyHp}/100   |   ESPECIAL ${this.skillReady ? "PRONTO" : "RECARGA"}`
+      `RBO 2.0  |  APRENDIZ   HP ${this.hp}/100   |   PORING ${this.enemyHp}/100   |   ESPECIAL ${this.skillReady ? "PRONTO" : "RECARGA"}`
     );
     const width = Math.min(190, this.scale.width * 0.42);
     this.playerBar.clear();
@@ -209,6 +228,8 @@ class Game extends Phaser.Scene {
   }
 
   update() {
+    this.heroArt.setPosition(this.player.x, this.player.y);
+    this.enemyArt.setPosition(this.enemy.x, this.enemy.y);
     if (Phaser.Input.Keyboard.JustDown(this.keys.R)) {
       this.scene.restart();
       return;
@@ -219,15 +240,19 @@ class Game extends Phaser.Scene {
     if (left) {
       this.player.setVelocityX(-220);
       this.facing = -1;
-      this.player.setFlipX(true);
+      const img = this.imageOf(this.heroArt);
+      if (img) img.style.transform = "scaleX(-1)";
+      if (!this.attackLocked) this.setHeroMode("walk");
     } else if (right) {
       this.player.setVelocityX(220);
       this.facing = 1;
-      this.player.setFlipX(false);
+      const img = this.imageOf(this.heroArt);
+      if (img) img.style.transform = "scaleX(1)";
+      if (!this.attackLocked) this.setHeroMode("walk");
     } else {
       this.player.setVelocityX(0);
+      if (!this.attackLocked) this.setHeroMode("idle");
     }
-
     if (Phaser.Input.Keyboard.JustDown(this.cursors.up!) ||
         Phaser.Input.Keyboard.JustDown(this.keys.W) ||
         Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.jump();
@@ -242,6 +267,7 @@ new Phaser.Game({
   type: Phaser.AUTO,
   parent: "app",
   backgroundColor: "#17243b",
+  dom: { createContainer: true },
   scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
   physics: { default: "arcade", arcade: { debug: false } },
   scene: [Game]
