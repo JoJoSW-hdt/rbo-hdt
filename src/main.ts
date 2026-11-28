@@ -2,8 +2,8 @@ import Phaser from "phaser";
 import "./style.css";
 
 const RO = "https://assets.latam-tools.com.br/image";
-const playerSprite = (action: number) => `${RO}?job=0&action=${action}`;
-const poringSprite = (action: number) => `${RO}?job=1002&action=0`;
+const playerSprite = (action: number) => `${RO}?job=0&action=${action}&frame=0&headdir=straight`;
+const poringSprite = (action: number) => `${RO}?job=1002&action=0&frame=0`;
 
 class Game extends Phaser.Scene {
   player!: Phaser.Physics.Arcade.Sprite;
@@ -24,7 +24,7 @@ class Game extends Phaser.Scene {
   ended = false;
   facing = 1;
   heroMode = "";
-  enemyMode = "";
+  enemyMode = "";\n  activeTouchId: number | null = null;
 
   constructor() { super("game"); }
 
@@ -55,12 +55,10 @@ class Game extends Phaser.Scene {
       `<img src="${playerSprite(6)}" style="width:160px;height:160px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
     ).setSize(160, 160).setOrigin(0.5, 0.77).setDepth(8);
     this.heroArt.node.style.pointerEvents = "none";
-    this.heroArt.node.parentElement!.style.pointerEvents = "none";
     this.enemyArt = this.add.dom(Math.max(w - 100, 230), h - 105).createFromHTML(
       `<img src="${poringSprite(6)}" style="width:128px;height:128px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
     ).setSize(128, 128).setOrigin(0.5, 0.77).setDepth(8);
     this.enemyArt.node.style.pointerEvents = "none";
-    this.enemyArt.node.parentElement!.style.pointerEvents = "none";
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
@@ -78,6 +76,21 @@ class Game extends Phaser.Scene {
       { fontSize: "10px", color: "#d8e5ff" }
     ).setOrigin(0, 1).setScrollFactor(0).setDepth(20);
     this.addTouchControls(w, h);
+    this.input.addPointer(2);
+    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (!p.wasTouch) return;
+      this.activeTouchId = p.id;
+      this.handleTouch(p.x, p.y, w, h);
+    });
+    this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
+      if (p.id !== this.activeTouchId || !p.isDown) return;
+      this.handleTouch(p.x, p.y, w, h);
+    });
+    this.input.on("pointerup", (p: Phaser.Input.Pointer) => {
+      if (p.id !== this.activeTouchId) return;
+      this.activeTouchId = null;
+      this.touchDirection = 0;
+    });
     this.time.delayedCall(900, () => this.enemyThink());
   }
 
@@ -110,22 +123,27 @@ class Game extends Phaser.Scene {
 
   addTouchControls(w: number, h: number) {
     const y = h - 78;
-    const button = (x: number, label: string, action: () => void, release?: () => void) => {
-      const circle = this.add.circle(x, y, 21, 0x54749b, 0.92)
-        .setStrokeStyle(2, 0xd9e8ff).setScrollFactor(0).setDepth(30).setInteractive();
+    const button = (x: number, label: string) => {
+      this.add.circle(x, y, 21, 0x54749b, 0.92)
+        .setStrokeStyle(2, 0xd9e8ff).setScrollFactor(0).setDepth(30);
       this.add.text(x, y, label, { fontSize: "18px", color: "#ffffff" })
         .setOrigin(0.5).setScrollFactor(0).setDepth(31);
-      circle.on("pointerdown", action);
-      circle.on("pointerup", () => release?.());
-      circle.on("pointerout", () => release?.());
     };
-    button(29, "◀", () => { this.touchDirection = -1; }, () => { this.touchDirection = 0; });
-    button(78, "▶", () => { this.touchDirection = 1; }, () => { this.touchDirection = 0; });
-    button(w - 218, "▲", () => this.jump());
-    button(w - 170, "↗", () => this.dodge());
-    button(w - 122, "A", () => this.hit(16, 112));
-    button(w - 74, "F", () => this.hit(27, 126));
-    button(w - 26, "E", () => this.special());
+    button(29, "◀"); button(78, "▶");
+    button(w - 218, "▲"); button(w - 170, "↗");
+    button(w - 122, "A"); button(w - 74, "F"); button(w - 26, "E");
+  }
+
+  handleTouch(x: number, y: number, w: number, h: number) {
+    if (y < h - 130) return;
+    if (x < 54) { this.touchDirection = -1; return; }
+    if (x < 112) { this.touchDirection = 1; return; }
+    this.touchDirection = 0;
+    if (x > w - 150 && x <= w - 98) this.hit(16, 112);
+    else if (x > w - 98 && x <= w - 50) this.hit(27, 126);
+    else if (x > w - 50) this.special();
+    else if (x > w - 245 && x <= w - 194) this.jump();
+    else if (x > w - 194 && x <= w - 146) this.dodge();
   }
 
   jump() {
