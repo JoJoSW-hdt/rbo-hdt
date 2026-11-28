@@ -1,321 +1,148 @@
-import Phaser from "phaser";
 import "./style.css";
 
-const RO = "https://assets.latam-tools.com.br/image";
-const playerSprite = (action: number) => `${RO}?job=0&action=${action}&frame=0&headdir=straight`;
-const poringSprite = (action: number) => `${RO}?job=1002&action=0&frame=0`;
+const root = document.querySelector<HTMLDivElement>("#app")!;
+root.innerHTML = `
+  <div id="game-shell">
+    <canvas id="game" aria-label="RBO 2.0"></canvas>
+    <div id="help">A / D ou ← / → mover · W / Espaço pular · J atacar · R reiniciar</div>
+  </div>`;
 
-class Game extends Phaser.Scene {
-  player!: Phaser.Physics.Arcade.Sprite;
-  enemy!: Phaser.Physics.Arcade.Sprite;
-  heroArt!: Phaser.GameObjects.DOMElement;
-  enemyArt!: Phaser.GameObjects.DOMElement;
-  keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  hud!: Phaser.GameObjects.Text;
-  enemyBar!: Phaser.GameObjects.Graphics;
-  playerBar!: Phaser.GameObjects.Graphics;
-  touchDirection = 0;
-  hp = 100;
-  enemyHp = 100;
-  attackLocked = false;
-  dodging = false;
-  invulnerable = false;
-  ended = false;
-  facing = 1;
-  heroMode = "";
-  enemyMode = "";
-  activeTouchId: number | null = null;
-  pressedKeys = new Set<string>();
-  onKeyDown = (event: KeyboardEvent) => { this.pressedKeys.add(event.key.toLowerCase()); };
-  onKeyUp = (event: KeyboardEvent) => { this.pressedKeys.delete(event.key.toLowerCase()); };
+const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
+const ctx = canvas.getContext("2d")!;
+const keys = new Set<string>();
+let width = 960, height = 540, last = 0, elapsed = 0;
+const world = { width: 1800, floor: 430, camera: 0 };
+const hero = { x: 150, y: 0, vx: 0, vy: 0, hp: 100, facing: 1, grounded: true, attack: 0, attackCooldown: 0, hitFlash: 0 };
+const poring = { x: 620, y: 0, vx: 0, hp: 100, facing: -1, hitFlash: 0, attackCooldown: 0, bob: 0 };
+let ended = false;
+let won = false;
+let message = "";
 
-  constructor() { super("game"); }
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  width = Math.max(320, rect.width);
+  height = Math.max(240, rect.height);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  world.floor = height - 90;
+  if (hero.y === 0) hero.y = world.floor - 58;
+  if (poring.y === 0) poring.y = world.floor - 34;
+}
+window.addEventListener("resize", resize);
+resize();
 
-  create() {
-    const w = this.scale.width, h = this.scale.height;
-    const floorY = h - 8;
-
-    // Textura mínima usada apenas pelos corpos físicos invisíveis.
-    // Phaser não possui uma textura "__DEFAULT" garantida.
-    const physicsTexture = this.make.graphics({ x: 0, y: 0 });
-    physicsTexture.fillStyle(0xffffff, 1);
-    physicsTexture.fillRect(0, 0, 2, 2);
-    physicsTexture.generateTexture("rbo-physics-body", 2, 2);
-    physicsTexture.destroy();
-
-    this.add.rectangle(w / 2, h / 2, w, h, 0x17243b);
-    this.add.rectangle(w / 2, h - 65, w, 130, 0x34445a);
-    for (let i = 0; i < 16; i++) this.add.rectangle(i * 110, h - 130, 2, 130, 0x52647a);
-    const floor = this.add.rectangle(w / 2, floorY, w, 16, 0x34445a);
-    this.physics.add.existing(floor, true);
-
-    this.player = this.physics.add.sprite(110, h - 105, "rbo-physics-body")
-      .setCollideWorldBounds(true).setVisible(false);
-    this.enemy = this.physics.add.sprite(Math.max(w - 100, 230), h - 105, "rbo-physics-body")
-      .setCollideWorldBounds(true).setImmovable(true).setVisible(false);
-    // Corpos invisíveis cuidam da física; as imagens animadas vêm dos sprites originais de RO.
-    this.player.setSize(34, 48).setOffset(4, 10);
-    this.enemy.setSize(40, 46).setOffset(4, 8);
-    this.player.setGravityY(1000).setMaxVelocity(300, 700);
-    this.enemy.setGravityY(1000).setMaxVelocity(100, 700);
-    this.physics.add.collider(this.player, floor);
-    this.physics.add.collider(this.enemy, floor);
-    this.physics.add.collider(this.player, this.enemy);
-
-    this.heroArt = this.add.dom(110, h - 105).createFromHTML(
-      `<img src="${playerSprite(6)}" style="width:160px;height:160px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
-    ).setSize(160, 160).setOrigin(0.5, 0.77).setDepth(8);
-    this.heroArt.node.style.pointerEvents = "none";
-    if (this.heroArt.node.parentElement) this.heroArt.node.parentElement.style.pointerEvents = "none";
-    this.enemyArt = this.add.dom(Math.max(w - 100, 230), h - 105).createFromHTML(
-      `<img src="${poringSprite(6)}" style="width:128px;height:128px;object-fit:contain;image-rendering:pixelated;pointer-events:none;" />`
-    ).setSize(128, 128).setOrigin(0.5, 0.77).setDepth(8);
-    this.enemyArt.node.style.pointerEvents = "none";
-    if (this.enemyArt.node.parentElement) this.enemyArt.node.parentElement.style.pointerEvents = "none";
-
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("A,D,W,J,K,L,E,SPACE,R") as Record<string, Phaser.Input.Keyboard.Key>;
-    // Captura direta do teclado: o preview embutido pode não focar o canvas.
-    window.addEventListener("keydown", this.onKeyDown);
-    window.addEventListener("keyup", this.onKeyUp);
-    window.addEventListener("blur", () => this.pressedKeys.clear());
-    this.game.canvas.setAttribute("tabindex", "0");
-
-    this.hud = this.add.text(14, 12, "", {
-      fontFamily: "Arial", fontSize: "14px", color: "#ffffff",
-      backgroundColor: "#101a2c", padding: { x: 8, y: 6 }
-    }).setScrollFactor(0).setDepth(20);
-    this.playerBar = this.add.graphics().setScrollFactor(0).setDepth(20);
-    this.enemyBar = this.add.graphics().setScrollFactor(0).setDepth(20);
-    this.refreshHud();
-
-    this.add.text(14, h - 18,
-      "A/D mover • W/ESPAÇO pular • J/K atacar • L esquivar • E habilidade",
-      { fontSize: "10px", color: "#d8e5ff" }
-    ).setOrigin(0, 1).setScrollFactor(0).setDepth(20);
-    this.addTouchControls(w, h);
-    this.input.addPointer(2);
-    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
-      this.activeTouchId = p.id;
-      this.handleTouch(p.x, p.y, w, h);
-    });
-    this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
-      if (p.id !== this.activeTouchId || !p.isDown) return;
-      this.handleTouch(p.x, p.y, w, h);
-    });
-    this.input.on("pointerup", (p: Phaser.Input.Pointer) => {
-      if (p.id !== this.activeTouchId) return;
-      this.activeTouchId = null;
-      this.touchDirection = 0;
-    });
-    this.time.delayedCall(900, () => this.enemyThink());
-  }
-
-  imageOf(art: Phaser.GameObjects.DOMElement): HTMLImageElement | null {
-    return art.node.querySelector("img");
-  }
-
-  setHeroMode(mode: "idle" | "walk" | "attack") {
-    if (this.heroMode === mode) return;
-    this.heroMode = mode;
-    const action = mode === "walk" ? 14 : mode === "attack" ? 46 : 6;
-    const img = this.imageOf(this.heroArt);
-    if (img) img.src = playerSprite(action);
-  }
-
-  setEnemyMode(mode: "idle" | "walk" | "attack") {
-    if (this.enemyMode === mode) return;
-    this.enemyMode = mode;
-    const action = 0;
-    const img = this.imageOf(this.enemyArt);
-    if (img) img.src = poringSprite(action);
-  }
-
-  flashArt(art: Phaser.GameObjects.DOMElement) {
-    const img = this.imageOf(art);
-    if (!img) return;
-    img.style.filter = "brightness(2.2) saturate(1.4)";
-    this.time.delayedCall(140, () => { img.style.filter = ""; });
-  }
-
-  addTouchControls(w: number, h: number) {
-    const y = h - 78;
-    const button = (x: number, label: string) => {
-      this.add.circle(x, y, 21, 0x54749b, 0.92)
-        .setStrokeStyle(2, 0xd9e8ff).setScrollFactor(0).setDepth(30);
-      this.add.text(x, y, label, { fontSize: "18px", color: "#ffffff" })
-        .setOrigin(0.5).setScrollFactor(0).setDepth(31);
-    };
-    button(29, "◀"); button(78, "▶");
-    button(w - 218, "▲"); button(w - 170, "↗");
-    button(w - 122, "A"); button(w - 74, "F"); button(w - 26, "E");
-  }
-
-  handleTouch(x: number, y: number, w: number, h: number) {
-    if (y < h - 130) return;
-    if (x < 54) { this.touchDirection = -1; return; }
-    if (x < 112) { this.touchDirection = 1; return; }
-    this.touchDirection = 0;
-    if (x > w - 150 && x <= w - 98) this.hit(16, 112);
-    else if (x > w - 98 && x <= w - 50) this.hit(27, 126);
-    else if (x > w - 50) this.special();
-    else if (x > w - 245 && x <= w - 194) this.jump();
-    else if (x > w - 194 && x <= w - 146) this.dodge();
-  }
-
-  jump() {
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    if (body.blocked.down && !this.ended) this.player.setVelocityY(-470);
-  }
-
-  dodge() {
-    if (this.dodging || this.ended) return;
-    this.dodging = true;
-    this.invulnerable = true;
-    this.player.setVelocityX(this.facing * 390);
-    this.heroArt.setAlpha(0.45);
-    this.time.delayedCall(260, () => {
-      this.dodging = false;
-      this.player.setVelocityX(0);
-      this.heroArt.setAlpha(1);
-    });
-    this.time.delayedCall(520, () => { this.invulnerable = false; });
-  }
-
-  hit(damage: number, range: number) {
-    if (this.attackLocked || this.ended || this.enemyHp <= 0) return;
-    this.attackLocked = true;
-    this.setHeroMode("attack");
-    const distance = Math.abs(this.player.x - this.enemy.x);
-    const inFront = (this.enemy.x - this.player.x) * this.facing > -18;
-    if (distance < range && inFront) {
-      this.enemyHp = Math.max(0, this.enemyHp - damage);
-      this.flashArt(this.enemyArt);
-      this.enemy.setVelocityX(this.facing * 100);
-      
-      this.refreshHud();
-      if (this.enemyHp === 0) this.finish(true);
+window.addEventListener("keydown", (e) => {
+  const key = e.key.toLowerCase();
+  if (["arrowleft","arrowright","arrowup"," "].includes(key)) e.preventDefault();
+  keys.add(key);
+  if (key === "j" && !ended && hero.attackCooldown <= 0) {
+    hero.attack = 0.22;
+    hero.attackCooldown = 0.38;
+    const dx = poring.x - hero.x;
+    if (Math.abs(dx) < 105 && Math.sign(dx || 1) === hero.facing) {
+      poring.hp = Math.max(0, poring.hp - 25);
+      poring.vx = hero.facing * 260;
+      poring.hitFlash = 0.16;
+      if (poring.hp <= 0) { ended = true; won = true; message = "PORING DERROTADO!"; }
     }
-    this.time.delayedCall(420, () => {
-      this.attackLocked = false;
-      if (!this.ended) this.setHeroMode("idle");
-    });
   }
+  if (key === "r" && ended) reset();
+});
+window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener("blur", () => keys.clear());
 
-  special() {
-    if (!this.skillReady || this.ended || this.enemyHp <= 0) return;
-    this.skillReady = false;
-    this.flashArt(this.heroArt);
-    
-    if (Math.abs(this.player.x - this.enemy.x) < 190) {
-      this.enemyHp = Math.max(0, this.enemyHp - 38);
-      this.flashArt(this.enemyArt);
-      
-      this.refreshHud();
-      if (this.enemyHp === 0) this.finish(true);
-    }
-    this.time.delayedCall(5000, () => { this.skillReady = true; this.refreshHud(); });
-    this.refreshHud();
-  }
-
-  skillReady = true;
-
-  enemyThink() {
-    if (this.ended || this.enemyHp <= 0) return;
-    const distance = Math.abs(this.player.x - this.enemy.x);
-    if (distance > 62) {
-      this.enemy.setVelocityX(this.player.x < this.enemy.x ? -62 : 62);
-      this.setEnemyMode("walk");
-      this.time.delayedCall(180, () => this.enemyThink());
-      return;
-    }
-    this.enemy.setVelocityX(0);
-    this.setEnemyMode("attack");
-    this.time.delayedCall(520, () => {
-      this.setEnemyMode("idle");
-      if (!this.ended && Math.abs(this.player.x - this.enemy.x) < 82 && !this.invulnerable) {
-        this.hp = Math.max(0, this.hp - 12);
-        this.flashArt(this.heroArt);
-        
-        this.refreshHud();
-        if (this.hp === 0) this.finish(false);
-      }
-      this.time.delayedCall(760, () => this.enemyThink());
-    });
-  }
-
-  refreshHud() {
-    this.hud.setText(
-      `RBO 2.0  |  APRENDIZ   HP ${this.hp}/100   |   PORING ${this.enemyHp}/100   |   ESPECIAL ${this.skillReady ? "PRONTO" : "RECARGA"}`
-    );
-    const width = Math.min(190, this.scale.width * 0.42);
-    this.playerBar.clear();
-    this.playerBar.fillStyle(0x26394f).fillRoundedRect(14, 44, width, 8, 4);
-    this.playerBar.fillStyle(0x52d68a).fillRoundedRect(14, 44, width * this.hp / 100, 8, 4);
-    this.enemyBar.clear();
-    this.enemyBar.fillStyle(0x26394f).fillRoundedRect(this.scale.width - width - 14, 44, width, 8, 4);
-    this.enemyBar.fillStyle(0xe56a58).fillRoundedRect(this.scale.width - width - 14, 44, width * this.enemyHp / 100, 8, 4);
-  }
-
-  finish(won: boolean) {
-    if (this.ended) return;
-    this.ended = true;
-    this.physics.pause();
-    this.add.rectangle(this.scale.width / 2, this.scale.height / 2, 250, 100, 0x101a2c, 0.92)
-      .setStrokeStyle(2, won ? 0xffd66b : 0xe56a58).setDepth(50);
-    this.add.text(this.scale.width / 2, this.scale.height / 2 - 10,
-      won ? "PORING DERROTADO!" : "VOCÊ FOI DERROTADO",
-      { fontSize: "20px", color: won ? "#ffe28a" : "#ff9a91", align: "center" }
-    ).setOrigin(0.5).setDepth(51);
-    this.add.text(this.scale.width / 2, this.scale.height / 2 + 22,
-      "Toque ou pressione R para jogar novamente",
-      { fontSize: "11px", color: "#ffffff" }
-    ).setOrigin(0.5).setDepth(51).setInteractive().on("pointerdown", () => this.scene.restart());
-  }
-
-  update() {
-    this.heroArt.setPosition(this.player.x, this.player.y);
-    this.enemyArt.setPosition(this.enemy.x, this.enemy.y);
-    if (this.pressedKeys.has("r") || Phaser.Input.Keyboard.JustDown(this.keys.R)) {
-      this.scene.restart();
-      return;
-    }
-    if (this.ended || this.dodging) return;
-    const left = this.pressedKeys.has("arrowleft") || this.pressedKeys.has("a") || this.cursors.left.isDown || this.keys.A.isDown || this.touchDirection === -1;
-    const right = this.pressedKeys.has("arrowright") || this.pressedKeys.has("d") || this.cursors.right.isDown || this.keys.D.isDown || this.touchDirection === 1;
-    if (left) {
-      this.player.setVelocityX(-220);
-      this.facing = -1;
-      const img = this.imageOf(this.heroArt);
-      if (img) img.style.transform = "scaleX(-1)";
-      if (!this.attackLocked) this.setHeroMode("walk");
-    } else if (right) {
-      this.player.setVelocityX(220);
-      this.facing = 1;
-      const img = this.imageOf(this.heroArt);
-      if (img) img.style.transform = "scaleX(1)";
-      if (!this.attackLocked) this.setHeroMode("walk");
-    } else {
-      this.player.setVelocityX(0);
-      if (!this.attackLocked) this.setHeroMode("idle");
-    }
-    if (this.pressedKeys.has("arrowup") || this.pressedKeys.has("w") || this.pressedKeys.has(" ") || Phaser.Input.Keyboard.JustDown(this.cursors.up!) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.W) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.jump();
-    if (this.pressedKeys.has("j") || Phaser.Input.Keyboard.JustDown(this.keys.J)) this.hit(16, 112);
-    if (this.pressedKeys.has("k") || Phaser.Input.Keyboard.JustDown(this.keys.K)) this.hit(27, 126);
-    if (this.pressedKeys.has("l") || Phaser.Input.Keyboard.JustDown(this.keys.L)) this.dodge();
-    if (this.pressedKeys.has("e") || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.special();
-  }
+function reset() {
+  hero.x = 150; hero.y = world.floor - 58; hero.vx = 0; hero.vy = 0; hero.hp = 100; hero.attack = 0; hero.attackCooldown = 0;
+  poring.x = 620; poring.y = world.floor - 34; poring.vx = 0; poring.hp = 100; poring.attackCooldown = 0;
+  ended = false; won = false; message = "";
 }
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: "app",
-  backgroundColor: "#17243b",
-  dom: { createContainer: true },
-  scale: { mode: Phaser.Scale.RESIZE, width: "100%", height: "100%" },
-  physics: { default: "arcade", arcade: { debug: false } },
-  scene: [Game]
-});
+function rect(x:number,y:number,w:number,h:number,color:string) { ctx.fillStyle=color; ctx.fillRect(Math.round(x),Math.round(y),w,h); }
+
+function drawApprentice(x:number,y:number, moving:boolean) {
+  const step = moving ? Math.sin(elapsed * 13) * 5 : 0;
+  const attack = hero.attack > 0;
+  ctx.save(); ctx.translate(Math.round(x),Math.round(y)); ctx.scale(hero.facing,1);
+  // sombra
+  ctx.fillStyle="rgba(0,0,0,.28)"; ctx.beginPath(); ctx.ellipse(0,2,23,6,0,0,Math.PI*2); ctx.fill();
+  // pernas animadas
+  rect(-12, -25 + step, 10, 24, "#473b45"); rect(3, -25 - step, 10, 24, "#473b45");
+  rect(-14, -5 + step, 14, 6, "#b18b58"); rect(1, -5 - step, 15, 6, "#b18b58");
+  // túnica de Aprendiz
+  rect(-18,-54,36,31,"#8c4938"); rect(-15,-52,30,26,"#bd7950");
+  rect(-18,-29,36,5,"#e1c18a"); rect(-4,-52,8,25,"#e8d39c");
+  // braços
+  rect(-25,-49,9,22,"#d6a276"); rect(16,-49,9,22,"#d6a276");
+  rect(-26,-29,11,7,"#8c4938"); rect(16,-29,11,7,"#8c4938");
+  if (attack) { rect(18,-49,28,9,"#d6a276"); rect(39,-51,12,13,"#f0c28c"); }
+  // cabeça, cabelo e bandana
+  rect(-16,-82,32,29,"#e9b987"); rect(-19,-83,38,12,"#583d32");
+  rect(-17,-91,34,9,"#765044"); rect(-13,-78,7,5,"#302a2a"); rect(7,-78,7,5,"#302a2a");
+  rect(-9,-66,18,3,"#a96858");
+  ctx.restore();
+}
+
+function drawPoring(x:number,y:number) {
+  ctx.save(); ctx.translate(Math.round(x),Math.round(y));
+  const squash = Math.sin(elapsed*5 + poring.bob) * 2;
+  ctx.fillStyle="rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(0,1,29,7,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=poring.hitFlash>0?"#fff2f2":"#f36b9b";
+  ctx.beginPath(); ctx.ellipse(0,-17,29,18+squash,0,Math.PI,Math.PI*2); ctx.lineTo(29,-13); ctx.quadraticCurveTo(27,2,0,1); ctx.quadraticCurveTo(-27,2,-29,-13); ctx.fill();
+  ctx.fillStyle="#ffffff"; ctx.fillRect(-13,-23,8,9); ctx.fillRect(6,-23,8,9);
+  ctx.fillStyle="#523044"; ctx.fillRect(-10,-20,4,6); ctx.fillRect(9,-20,4,6);
+  ctx.fillStyle="#a83d68"; ctx.fillRect(-4,-10,8,3);
+  ctx.restore();
+}
+
+function drawMap() {
+  const sky=ctx.createLinearGradient(0,0,0,height); sky.addColorStop(0,"#253c59"); sky.addColorStop(1,"#7893a2"); ctx.fillStyle=sky; ctx.fillRect(0,0,width,height);
+  // montanhas distantes
+  ctx.fillStyle="#344d5b"; ctx.beginPath(); ctx.moveTo(0,world.floor-100); ctx.lineTo(180,world.floor-245); ctx.lineTo(360,world.floor-100); ctx.lineTo(550,world.floor-220); ctx.lineTo(790,world.floor-100); ctx.lineTo(980,world.floor-190); ctx.lineTo(1200,world.floor-100); ctx.lineTo(1450,world.floor-230); ctx.lineTo(1800,world.floor-100); ctx.lineTo(1800,world.floor); ctx.lineTo(0,world.floor); ctx.fill();
+  // muralha / cenário de campo
+  for(let i=0;i<8;i++){const bx=i*260-world.camera*.35; rect(bx,world.floor-90,190,90,"#536d64"); rect(bx+12,world.floor-112,166,22,"#71856d");}
+  rect(0,world.floor,world.width,height-world.floor,"#685b49");
+  rect(0,world.floor+8,world.width,5,"#b6a077");
+  for(let i=0;i<70;i++){const x=(i*83-world.camera*.8)%world.width; rect(x,world.floor+30+(i%4)*13,3,2,"#a58b60");}
+  // placa de mapa
+  ctx.fillStyle="rgba(12,23,37,.72)"; ctx.fillRect(16,76,160,30);
+  ctx.fillStyle="#f2dfb2"; ctx.font="bold 14px Arial"; ctx.fillText("CAMPO DE PRONTERA",27,96);
+}
+
+function drawBar(x:number,y:number,w:number,value:number,color:string,label:string) {
+  ctx.fillStyle="#152337";ctx.fillRect(x,y,w,20);ctx.fillStyle=color;ctx.fillRect(x+2,y+2,(w-4)*value/100,16);
+  ctx.fillStyle="#fff";ctx.font="bold 11px Arial";ctx.fillText(label,x+7,y+14);
+}
+
+function frame(dt:number) {
+  elapsed += dt;
+  const left=keys.has("a")||keys.has("arrowleft"), right=keys.has("d")||keys.has("arrowright");
+  if(!ended){
+    hero.attackCooldown=Math.max(0,hero.attackCooldown-dt); hero.attack=Math.max(0,hero.attack-dt); hero.hitFlash=Math.max(0,hero.hitFlash-dt);
+    if(left){hero.vx=-230;hero.facing=-1;} else if(right){hero.vx=230;hero.facing=1;} else hero.vx*=Math.pow(.001,dt);
+    if((keys.has("w")||keys.has("arrowup")||keys.has(" "))&&hero.y>=world.floor-58) hero.vy=-520;
+    hero.vy+=1350*dt; hero.x+=hero.vx*dt; hero.y+=hero.vy*dt;
+    if(hero.y>world.floor-58){hero.y=world.floor-58;hero.vy=0;}
+    hero.x=Math.max(30,Math.min(world.width-30,hero.x));
+    const dx=hero.x-poring.x;
+    if(Math.abs(dx)>48){poring.vx=Math.sign(dx)*Math.min(90,Math.abs(dx)*1.1);poring.facing=Math.sign(dx);}
+    else {poring.vx=0;poring.attackCooldown-=dt;if(poring.attackCooldown<=0){hero.hp=Math.max(0,hero.hp-8);poring.attackCooldown=1.2;hero.hitFlash=.15;if(hero.hp===0){ended=true;won=false;message="APRENDIZ DERROTADO!";}}}
+    poring.x+=poring.vx*dt;poring.x=Math.max(45,Math.min(world.width-45,poring.x));
+    poring.hitFlash=Math.max(0,poring.hitFlash-dt);poring.bob+=dt;
+    world.camera=Math.max(0,Math.min(world.width-width,hero.x-width*.42));
+  }
+  ctx.clearRect(0,0,width,height);
+  drawMap();
+  ctx.save();ctx.translate(-world.camera,0);
+  drawApprentice(hero.x,hero.y,Math.abs(hero.vx)>20);
+  drawPoring(poring.x,poring.y);
+  ctx.restore();
+  drawBar(16,16,210,hero.hp,"#54d68b","APRENDIZ  HP "+hero.hp);
+  drawBar(width-226,16,210,poring.hp,"#e96b99","PORING  HP "+poring.hp);
+  if(hero.hitFlash>0){ctx.fillStyle="rgba(255,90,90,.12)";ctx.fillRect(0,0,width,height);}
+  if(ended){ctx.fillStyle="rgba(8,14,24,.76)";ctx.fillRect(width/2-180,height/2-55,360,110);ctx.fillStyle=won?"#ffe29a":"#ff9b9b";ctx.textAlign="center";ctx.font="bold 25px Arial";ctx.fillText(message,width/2,height/2-5);ctx.fillStyle="#fff";ctx.font="14px Arial";ctx.fillText("Pressione R para tentar novamente",width/2,height/2+27);ctx.textAlign="left";}
+  if(!ended && hero.attack>0){ctx.fillStyle="#fff2b0";ctx.font="bold 15px Arial";ctx.fillText("GOLPE!",width/2-25,height-35);}
+  requestAnimationFrame((t)=>{const delta=Math.min((t-last)/1000,.04);last=t;frame(delta);});
+}
+requestAnimationFrame((t)=>{last=t;frame(0);});
