@@ -1,9 +1,9 @@
 import Phaser from "phaser";
 import "./style.css";
 
-const RO = "https://assets.latam-tools.com.br/image";
-const playerSprite = (action: number) => `${RO}?job=0&action=${action}&canvas=160x160+80+150`;
-const poringSprite = (action: number) => `${RO}?job=1002&action=${action}&canvas=128x128+64+120`;
+const RO = "https://assets.latam-tools.com.br/gif";
+const playerSprite = (action: number) => `${RO}?job=0&action=${action}`;
+const poringSprite = (action: number) => `${RO}?job=1002&action=${action}`;
 
 class Game extends Phaser.Scene {
   player!: Phaser.Physics.Arcade.Sprite;
@@ -92,7 +92,7 @@ class Game extends Phaser.Scene {
   setEnemyMode(mode: "idle" | "walk" | "attack") {
     if (this.enemyMode === mode) return;
     this.enemyMode = mode;
-    const action = mode === "walk" ? 14 : mode === "attack" ? 22 : 6;
+    const action = mode === "walk" ? 8 : mode === "attack" ? 16 : 0;
     const img = this.imageOf(this.enemyArt);
     if (img) img.src = poringSprite(action);
   }
